@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math OCR: Image/PDF to Khmer & LaTeX</title>
+    
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;700&display=swap');
+        body { font-family: 'Kantumruy Pro', sans-serif; background: #f4f7f9; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; font-size: 22px; }
+        .upload-section { border: 2px dashed #3498db; padding: 30px; text-align: center; border-radius: 10px; cursor: pointer; margin-bottom: 20px; }
+        .result-area { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        .box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; min-height: 150px; background: #fafafa; }
+        .box h3 { margin-top: 0; font-size: 16px; color: #1a73e8; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        #status { color: #e67e22; font-weight: bold; text-align: center; }
+        pre { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', monospace; font-size: 13px; }
+        canvas { display: none; }
+        img#preview { max-width: 100%; border-radius: 5px; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>👨‍🏫 កម្មវិធីបម្លែងរូបភាពវិញ្ញាសា ទៅជាខ្មែរ និង LaTeX</h1>
+    
+    <div class="upload-section" onclick="document.getElementById('fileInput').click()">
+        <p>ចុចទីនេះដើម្បីបញ្ចូលរូបភាព ឬ File PDF (វិញ្ញាសាបារាំង)</p>
+        <input type="file" id="fileInput" hidden accept="image/*,application/pdf">
+    </div>
+
+    <div id="status">រង់ចាំការបញ្ចូលឯកសារ...</div>
+    <center><img id="preview"></center>
+
+    <div class="result-area">
+        <div class="box">
+            <h3>1. អត្ថបទដើម (បារាំង)</h3>
+            <div id="originalText">...</div>
+        </div>
+        <div class="box">
+            <h3>2. បកប្រែជាខ្មែរ</h3>
+            <div id="translatedText">...</div>
+        </div>
+        <div class="box">
+            <h3>3. Code LaTeX</h3>
+            <pre id="latexCode">...</pre>
+        </div>
+        <div class="box">
+            <h3>4. បង្ហាញរូបមន្ត</h3>
+            <div id="mathDisplay">...</div>
+        </div>
+    </div>
+</div>
+
+<canvas id="pdfCanvas"></canvas>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const status = document.getElementById('status');
+    const originalTextDiv = document.getElementById('originalText');
+    const translatedTextDiv = document.getElementById('translatedText');
+    const latexCodeDiv = document.getElementById('latexCode');
+    const mathDisplayDiv = document.getElementById('mathDisplay');
+    const previewImg = document.getElementById('preview');
+
+    // វចនានុក្រមសាមញ្ញសម្រាប់ជំនួយការបកប្រែ
+    const dictionary = {
+        "soit": "ឧបមាថា",
+        "calculer": "គណនា",
+        "montrer que": "បង្ហាញថា",
+        "resoudre": "ដោះស្រាយ",
+        "limite": "លីមីត",
+        "integrale": "អាំងតេក្រាល",
+        "derivee": "ដេរីវេ",
+        "suite": "ស៊្វីត",
+        "nombres complexes": "ចំនួនកុំផ្លិច",
+        "determiner": "កំណត់"
+    };
+
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        status.innerText = "កំពុងអានឯកសារ...";
+        
+        if (file.type === "application/pdf") {
+            processPDF(file);
+        } else {
+            processImage(URL.createObjectURL(file));
+        }
+    });
+
+    async function processPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = document.getElementById('pdfCanvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+        processImage(canvas.toDataURL());
+    }
+
+    async function processImage(imageSrc) {
+        previewImg.src = imageSrc;
+        previewImg.style.display = "block";
+        status.innerText = "កំពុងស្កេនអក្សរ (OCR)... សូមរង់ចាំ...";
+
+        // ប្រើ Tesseract.js ដើម្បីអានអក្សរ
+        const worker = await Tesseract.createWorker();
+        await worker.loadLanguage('fra');
+        await worker.initialize('fra');
+        const { data: { text } } = await worker.recognize(imageSrc);
+        await worker.terminate();
+
+        displayResults(text);
+    }
+
+    function displayResults(text) {
+        status.innerText = "សម្រេច!";
+        originalTextDiv.innerText = text;
+
+        // ១. ការបកប្រែសាមញ្ញ (ជំនួសពាក្យគន្លឹះ)
+        let translated = text.toLowerCase();
+        for (let key in dictionary) {
+            let reg = new RegExp(key, "g");
+            translated = translated.replace(reg, dictionary[key]);
+        }
+        translatedTextDiv.innerText = translated;
+
+        // ២. ការបង្កើត Code LaTeX (ទម្រង់សាមញ្ញ)
+        // សម្គាល់៖ ក្នុងកម្មវិធីកម្រិតខ្ពស់ គេប្រើ AI ដើម្បីបំប្លែងអត្ថបទឱ្យទៅជា LaTeX
+        let latex = text.replace(/\n/g, " \\\\ ");
+        latexCodeDiv.innerText = `\\begin{aligned} \n ${latex} \n \\end{aligned}`;
+
+        // ៣. បង្ហាញរូបមន្តក្នុង MathJax
+        mathDisplayDiv.innerHTML = `$$ ${latex} $$`;
+        MathJax.typeset();
+    }
+</script>
+
+</body>
+</html>
